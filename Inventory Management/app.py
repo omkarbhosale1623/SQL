@@ -1,13 +1,20 @@
 import streamlit as st
 import mysql.connector
-from mysql.connector import Error
 import pandas as pd
+import numpy as np
 
 # Database connection parameters
 DB_HOST = 'localhost'
 DB_USER = 'root'
-DB_PASSWORD = 'Ob@5229688' 
+DB_PASSWORD = 'Ob@5229688'
 DB_NAME = 'inventory'
+
+# Helper to convert numpy types to native Python types
+def to_native(params):
+    """Convert numpy types to native Python types for MySQL queries."""
+    if params:
+        return tuple(int(p) if isinstance(p, (np.integer, np.int64)) else p for p in params)
+    return params
 
 # Helper function to connect to the database
 def get_connection():
@@ -18,48 +25,29 @@ def get_connection():
         database=DB_NAME
     )
 
-# --- Helper: Query (SELECT) ---
+# Helper to run a query and return DataFrame
 def run_query(query, params=None):
     conn = get_connection()
     df = pd.DataFrame()
     try:
-        cursor = conn.cursor(dictionary=True) 
-        cursor.execute(query, params or ())
-        rows = cursor.fetchall()
-        if rows:
-            df = pd.DataFrame(rows)
+        df = pd.read_sql(query, conn, params=params)
     except Exception as e:
-        st.error(f"❌ Query Error: {e}")
+        st.error(f"Error: {e}")
     finally:
-        cursor.close()
         conn.close()
     return df
 
+# Helper to execute a command (insert/update/delete)
 def run_command(query, params=None):
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        
-        # Convert dates if passed in params
-        if params:
-            params = tuple(
-                p.strftime("%Y-%m-%d") if isinstance(p, (datetime.date, datetime.datetime)) else p
-                for p in params
-            )
-
-        cursor.execute(query, params or ())
+        cursor.execute(query, params)
         conn.commit()
         return True, None
-
-    except mysql.connector.Error as e:
-        err_msg = str(e)
-        # Handle custom trigger error gracefully
-        if "Not enough stock" in err_msg:
-            return False, "⚠️ Not enough stock for this sale."
-        return False, err_msg
-
+    except Exception as e:
+        return False, str(e)
     finally:
-        cursor.close()
         conn.close()
 
 # Sidebar navigation
@@ -111,7 +99,7 @@ elif menu == "Update Category":
             if submitted:
                 ok, err = run_command(
                     "UPDATE categories SET name=%s, description=%s WHERE category_id=%s",
-                    (name, desc, row["category_id"])
+                    to_native((name, desc, row["category_id"]))
                 )
                 if ok:
                     st.success("Category updated.")
@@ -129,7 +117,7 @@ elif menu == "Delete Category":
         if st.button("Delete"):
             ok, err = run_command(
                 "DELETE FROM categories WHERE category_id=%s",
-                (row["category_id"],)
+                to_native((row["category_id"],))
             )
             if ok:
                 st.success("Category deleted.")
@@ -179,7 +167,7 @@ elif menu == "Update Supplier":
             if submitted:
                 ok, err = run_command(
                     "UPDATE suppliers SET name=%s, contact_name=%s, phone=%s, email=%s, address=%s WHERE supplier_id=%s",
-                    (name, contact, phone, email, address, row["supplier_id"])
+                    to_native((name, contact, phone, email, address, row["supplier_id"]))
                 )
                 if ok:
                     st.success("Supplier updated.")
@@ -197,7 +185,7 @@ elif menu == "Delete Supplier":
         if st.button("Delete"):
             ok, err = run_command(
                 "DELETE FROM suppliers WHERE supplier_id=%s",
-                (row["supplier_id"],)
+                to_native((row["supplier_id"],))
             )
             if ok:
                 st.success("Supplier deleted.")
@@ -229,7 +217,7 @@ elif menu == "Add Product":
             sup_id = int(sups[sups["name"] == sup]["supplier_id"].iloc[0])
             ok, err = run_command(
                 "INSERT INTO products (name, category_id, supplier_id, unit_price, units_in_stock, reorder_level) VALUES (%s, %s, %s, %s, %s, %s)",
-                (name, cat_id, sup_id, price, stock, reorder)
+                to_native((name, cat_id, sup_id, price, stock, reorder))
             )
             if ok:
                 st.success("Product added.")
@@ -257,7 +245,7 @@ elif menu == "Update Product":
                 sup_id = int(sups[sups["name"] == sup]["supplier_id"].iloc[0])
                 ok, err = run_command(
                     "UPDATE products SET name=%s, category_id=%s, supplier_id=%s, unit_price=%s, units_in_stock=%s, reorder_level=%s WHERE product_id=%s",
-                    (name, cat_id, sup_id, price, stock, reorder, row["product_id"])
+                    to_native((name, cat_id, sup_id, price, stock, reorder, row["product_id"]))
                 )
                 if ok:
                     st.success("Product updated.")
@@ -275,7 +263,7 @@ elif menu == "Delete Product":
         if st.button("Delete"):
             ok, err = run_command(
                 "DELETE FROM products WHERE product_id=%s",
-                (row["product_id"],)
+                to_native((row["product_id"],))
             )
             if ok:
                 st.success("Product deleted.")
@@ -305,7 +293,7 @@ elif menu == "Add Purchase":
             sup_id = int(sups[sups["name"] == sup]["supplier_id"].iloc[0])
             ok, err = run_command(
                 "INSERT INTO purchases (product_id, supplier_id, quantity, purchase_date) VALUES (%s, %s, %s, %s)",
-                (prod_id, sup_id, qty, date)
+                to_native((prod_id, sup_id, qty, date))
             )
             if ok:
                 st.success("Purchase added.")
@@ -331,7 +319,7 @@ elif menu == "Update Purchase":
                 sup_id = int(sups[sups["name"] == sup]["supplier_id"].iloc[0])
                 ok, err = run_command(
                     "UPDATE purchases SET product_id=%s, supplier_id=%s, quantity=%s, purchase_date=%s WHERE purchase_id=%s",
-                    (prod_id, sup_id, qty, date, pur_id)
+                    to_native((prod_id, sup_id, qty, date, pur_id))
                 )
                 if ok:
                     st.success("Purchase updated.")
@@ -348,7 +336,7 @@ elif menu == "Delete Purchase":
         if st.button("Delete"):
             ok, err = run_command(
                 "DELETE FROM purchases WHERE purchase_id=%s",
-                (pur_id,)
+                to_native((pur_id,))
             )
             if ok:
                 st.success("Purchase deleted.")
@@ -375,7 +363,7 @@ elif menu == "Add Sale":
             prod_id = int(prods[prods["name"] == prod]["product_id"].iloc[0])
             ok, err = run_command(
                 "INSERT INTO sales (product_id, quantity, sale_date) VALUES (%s, %s, %s)",
-                (prod_id, qty, date)
+                to_native((prod_id, qty, date))
             )
             if ok:
                 st.success("Sale added.")
@@ -398,7 +386,7 @@ elif menu == "Update Sale":
                 prod_id = int(prods[prods["name"] == prod]["product_id"].iloc[0])
                 ok, err = run_command(
                     "UPDATE sales SET product_id=%s, quantity=%s, sale_date=%s WHERE sale_id=%s",
-                    (prod_id, qty, date, sale_id)
+                    to_native((prod_id, qty, date, sale_id))
                 )
                 if ok:
                     st.success("Sale updated.")
@@ -415,7 +403,7 @@ elif menu == "Delete Sale":
         if st.button("Delete"):
             ok, err = run_command(
                 "DELETE FROM sales WHERE sale_id=%s",
-                (sale_id,)
+                to_native((sale_id,))
             )
             if ok:
                 st.success("Sale deleted.")
@@ -428,4 +416,4 @@ elif menu == "Delete Sale":
 if menu == "Monthly Sales Report":
     st.header("Monthly Sales Report")
     df = run_query("SELECT * FROM monthly_sales_report")
-    st.dataframe(df) 
+    st.dataframe(df)
