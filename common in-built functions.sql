@@ -1,0 +1,10 @@
+select database();
+select version();
+select user();
+select char_length("Omkar");
+select length("Omkar");
+select reverse("Omkar");
+select uuid();
+select if(5<3 ,'Omkar','Bhosale');
+select coalesce(NULL,NULL,'backup',null,'Omkar');
+select isnull(NULL);
